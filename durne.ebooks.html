@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>durne.ebooks</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#faf7f2;--fg:#1f1b16;--card:#fff;--mut:#7a7066;--ac:#b4501e;--bd:#e4ddd2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17140f;--fg:#efe8dd;--card:#221e18;--mut:#a39986;--ac:#e08a55;--bd:#3a342b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17140f;--fg:#efe8dd;--card:#221e18;--mut:#a39986;--ac:#e08a55;--bd:#3a342b;color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 Georgia,'Times New Roman',serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+h1{font-size:18px;margin:0;color:var(--ac);flex:1;min-width:120px}
+button,select,label.b{font:14px system-ui,sans-serif;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:7px 10px;cursor:pointer}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+#meter{font:12px system-ui;color:var(--mut);padding:4px 12px}#meter.over{color:#c0392b;font-weight:700}
+main{flex:1;display:flex;min-height:0}
+aside{width:210px;border-right:1px solid var(--bd);overflow:auto;padding:8px;font-family:system-ui,sans-serif;font-size:14px}
+.ch{display:flex;align-items:center;gap:4px;padding:6px;border-radius:8px;cursor:pointer}
+.ch.on{background:var(--card);border:1px solid var(--ac)}.ch span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch i{font-style:normal;color:var(--mut);padding:0 3px}
+section{flex:1;display:flex;flex-direction:column;min-width:0}
+.tb{display:flex;gap:6px;padding:8px;flex-wrap:wrap;border-bottom:1px solid var(--bd)}
+#title{font:700 20px Georgia,serif;border:0;background:transparent;color:var(--fg);padding:8px 14px;width:100%;outline:0}
+#ed{flex:1;overflow:auto;padding:6px 14px 60px;outline:0;max-width:760px;width:100%;margin:0 auto}
+#ed img{max-width:100%;border-radius:6px}#ed table{border-collapse:collapse;max-width:100%;display:block;overflow-x:auto}
+#ed td,#ed th{border:1px solid var(--bd);padding:3px 8px}
+#toast{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:20px;font:13px system-ui;opacity:0;transition:.3s;pointer-events:none;max-width:90%}
+@media(max-width:640px){aside{position:fixed;z-index:5;top:0;bottom:0;left:0;background:var(--bg);width:80%;transform:translateX(-100%);transition:.2s;padding-top:calc(8px + env(safe-area-inset-top,0px))}aside.open{transform:none}}
+@media(min-width:641px){#menu{display:none}}
+</style></head><body>
+<header><button id="menu">☰</button><h1>durne.ebooks</h1>
+<button id="dl" class="p">⬇ Download</button><button id="th">◐</button></header>
+<div id="meter"></div>
+<main>
+<aside id="side"><button id="add" style="width:100%;margin-bottom:8px">+ New chapter</button><div id="list"></div></aside>
+<section>
+<input id="title" placeholder="Chapter title">
+<div class="tb">
+<button data-c="bold"><b>B</b></button><button data-c="italic"><i>I</i></button>
+<button data-h="h2">H</button><button data-c="insertUnorderedList">• List</button>
+<label class="b">🖼 Image<input id="img" type="file" accept="image/*" hidden></label>
+<label class="b">📂 Import<input id="imp" type="file" accept=".txt,.md,.csv,.xlsx,.xls,.html,.json" hidden></label>
+</div>
+<div id="ed" contenteditable="true" spellcheck="true"></div>
+</section></main>
+<div id="toast"></div>
+<script>
+const WPP=250,MAXP=200,MAXW=WPP*MAXP,KEY='durne.ebooks.v1';
+let S={ch:[{id:1,t:'Chapter 1',h:''}],cur:1,n:1};
+try{const r=localStorage.getItem(KEY);if(r)S=JSON.parse(r)}catch(e){}
+const $=id=>document.getElementById(id),ed=$('ed'),ti=$('title');
+const cur=()=>S.ch.find(c=>c.id===S.cur)||S.ch[0];
+const txt=h=>{const d=document.createElement('div');d.innerHTML=h;return d.innerText||d.textContent||''};
+const words=h=>(txt(h).trim().match(/\S+/g)||[]).length;
+function toast(m){const t=$('toast');t.textContent=m;t.style.opacity=1;clearTimeout(toast.x);toast.x=setTimeout(()=>t.style.opacity=0,2600)}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Storage full! Download a backup and remove some images.')}}
+function total(){return S.ch.reduce((a,c)=>a+words(c.h),0)}
+function meter(){const w=total(),p=Math.ceil(w/WPP);const m=$('meter');m.textContent=`${w.toLocaleString()} words · ~${p}/${MAXP} pages`+(w>=MAXW?' · LIMIT REACHED':'');m.className=w>=MAXW?'over':''}
+function render(){
+  const l=$('list');l.innerHTML='';
+  S.ch.forEach((c,i)=>{const d=document.createElement('div');d.className='ch'+(c.id===S.cur?' on':'');
+    const s=document.createElement('span');s.textContent=c.t||'Untitled';d.appendChild(s);
+    [['↑',()=>mv(i,-1)],['↓',()=>mv(i,1)],['✕',()=>del(i)]].forEach(([k,f])=>{const b=document.createElement('i');b.textContent=k;b.onclick=e=>{e.stopPropagation();f()};d.appendChild(b)});
+    d.onclick=()=>{flush();S.cur=c.id;load();render();$('side').classList.remove('open')};l.appendChild(d)});
+  meter()}
+function load(){const c=cur();ti.value=c.t;ed.innerHTML=c.h}
+function flush(){const c=cur();c.t=ti.value;c.h=ed.innerHTML;save()}
+function mv(i,d){const j=i+d;if(j<0||j>=S.ch.length)return;flush();[S.ch[i],S.ch[j]]=[S.ch[j],S.ch[i]];save();render()}
+function del(i){if(!confirm('Delete "'+(S.ch[i].t||'Untitled')+'"?'))return;S.ch.splice(i,1);if(!S.ch.length)S.ch.push({id:++S.n,t:'Chapter 1',h:''});S.cur=S.ch[Math.min(i,S.ch.length-1)].id;save();load();render()}
+function newCh(t,h){flush();const c={id:++S.n,t:t||'Chapter '+(S.ch.length+1),h:h||''};S.ch.push(c);S.cur=c.id;save();load();render()}
+$('add').onclick=()=>newCh();
+$('menu').onclick=()=>$('side').classList.toggle('open');
+$('th').onclick=()=>{const r=document.documentElement,d=r.dataset.theme==='dark'||(!r.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);r.dataset.theme=d?'light':'dark'};
+let tm;const sv=()=>{clearTimeout(tm);tm=setTimeout(()=>{flush();render()},500)};
+ed.addEventListener('input',sv);ti.addEventListener('input',sv);
+ed.addEventListener('beforeinput',e=>{if(e.inputType.startsWith('insert')&&total()>=MAXW){e.preventDefault();toast('200-page limit reached')}});
+document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{ed.focus();document.execCommand(b.dataset.c);sv()});
+document.querySelector('[data-h]').onclick=()=>{ed.focus();document.execCommand('formatBlock',false,'h2');sv()};
+// images
+$('img').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,900/im.width),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);ed.focus();document.execCommand('insertImage',false,c.toDataURL('image/jpeg',.75));sv()};im.src=r.result};r.readAsDataURL(f);e.target.value=''};
+// import
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+$('imp').onchange=e=>{const f=e.target.files[0];if(!f)return;const n=f.name.toLowerCase(),base=f.name.replace(/\.[^.]+$/,'');e.target.value='';
+  if(/\.(xlsx|xls|csv)$/.test(n)){const r=new FileReader();r.onload=()=>{try{const wb=XLSX.read(r.result,{type:'array'});const h=wb.SheetNames.map(s=>'<h2>'+esc(s)+'</h2>'+XLSX.utils.sheet_to_html(wb.Sheets[s]).replace(/^[\s\S]*?(<table)/,'$1').replace(/<\/table>[\s\S]*$/,'</table>')).join('<p></p>');newCh(base,h);toast('Sheet imported — edit the cells right here')}catch(x){toast('Could not read that file')}};r.readAsArrayBuffer(f)}
+  else if(/\.json$/.test(n)){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.ch)throw 0;if(confirm('Restore backup? This replaces what is in the app now.')){S=d;save();load();render();toast('Backup restored')}}catch(x){toast('Not a valid backup file')}};r.readAsText(f)}
+  else{const r=new FileReader();r.onload=()=>{const t=r.result;newCh(base,/\.html$/.test(n)?t:t.split(/\n{2,}/).map(p=>'<p>'+esc(p).replace(/\n/g,'<br>')+'</p>').join(''))};r.readAsText(f)}};
+// download
+async function save2(name,data){const d=await claude.use('downloads');if(!d){toast('Downloads not available here');return}try{await d.save({filename:name,data})}catch(x){if(x.code!=='declined')toast('Download failed: '+(x.code||'error'))}}
+const book=()=>{flush();return S.ch};
+function mkPDF(){const {jsPDF}=window.jspdf,p=new jsPDF({unit:'pt',format:'a4'}),W=595,H=842,M=56,mw=W-2*M;let y=M;
+  const need=h=>{if(y+h>H-M){p.addPage();y=M}};
+  book().forEach((c,i)=>{if(i){p.addPage();y=M}p.setFont('times','bold');p.setFontSize(20);p.splitTextToSize(c.t||'Untitled',mw).forEach(l=>{need(26);p.text(l,M,y);y+=26});y+=8;
+    const d=document.createElement('div');d.innerHTML=c.h;
+    d.querySelectorAll('img').forEach(im=>{const m=document.createElement('p');m.textContent='\u0001IMG'+im.src;im.replaceWith(m)});
+    d.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));
+    const blocks=[...d.querySelectorAll('p,div,h1,h2,h3,li,tr')];const items=(blocks.length?blocks:[d]).filter(b=>!blocks.some(o=>o!==b&&b.contains(o)));
+    items.forEach(b=>{const t=(b.innerText||b.textContent||'').trim();if(!t)return;
+      if(t.startsWith('\u0001IMG')){try{const src=t.slice(4),pr=p.getImageProperties(src),w=Math.min(mw,pr.width),h=w*pr.height/pr.width;need(h+8);p.addImage(src,'JPEG',M,y,w,h);y+=h+10}catch(x){}return}
+      const hd=/^H[1-3]$/.test(b.tagName);p.setFont('times',hd?'bold':'normal');p.setFontSize(hd?15:12);
+      p.splitTextToSize(t,mw).forEach(l=>{need(17);p.text(l,M,y);y+=17});y+=6})});
+  return p.output('blob')}
+function mkHTML(){return '<!DOCTYPE html><meta charset="utf-8"><title>durne.ebooks</title><style>body{font:12pt Georgia,serif;max-width:700px;margin:auto}img{max-width:100%}h1{page-break-before:always}h1:first-of-type{page-break-before:auto}</style>'+book().map(c=>'<h1>'+esc(c.t||'Untitled')+'</h1>'+c.h).join('')}
+function mkXLSX(){const t=ed.querySelector('table');flush();if(!t){toast('No table in this chapter — import an Excel/CSV first');return null}const wb=XLSX.utils.table_to_book(t);return new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})])}
+$('dl').onclick=()=>{
+  const o=prompt('Download what?\n1 = PDF (whole manuscript)\n2 = Word-ready HTML (with images)\n3 = Plain text\n4 = Backup file (.json) — keep this safe!\n5 = This chapter’s table as Excel','1');
+  const nm='durne-ebooks';
+  if(o==='1')save2(nm+'.pdf',mkPDF());
+  else if(o==='2')save2(nm+'.html',new Blob([mkHTML()],{type:'text/html'}));
+  else if(o==='3')save2(nm+'.txt',new Blob([book().map(c=>c.t+'\n\n'+txt(c.h)).join('\n\n\n')],{type:'text/plain'}));
+  else if(o==='4')save2(nm+'-backup.json',new Blob([JSON.stringify(S)],{type:'application/json'}));
+  else if(o==='5'){const b=mkXLSX();if(b)save2(nm+'.xlsx',b)}};
+load();render();
+</script></body></html>
